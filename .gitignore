@@ -11,3 +11,8 @@ wheels/
 
 # 开发使用
 .vscode
+
+# DuckDB 数据库文件(本地数据, 不进版本库)
+*.db
+*.duckdb
+*.db.wal

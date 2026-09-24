@@ -12,7 +12,7 @@ def init_schema(path: str = DEFAULT_DB_PATH) -> None:
         path: 数据库文件路径, 默认 "sp500.db"。
 
     Returns:
-        None。在目标数据库中创建 constituents、prices、risk_free_rate、roe、financials
+        None。在目标数据库中创建 constituents、prices、risk_free_rate、roe、financials、fundamentals
         以及 A 股的 trade_calendar、stock_basic、daily_status、index_members 表。
 
     Example:

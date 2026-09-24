@@ -1,4 +1,4 @@
-"""数据库建表 DDL, 定义 constituents、prices、risk_free_rate、roe 等表结构。
+"""数据库建表 DDL, 定义 constituents、prices、risk_free_rate、roe、fundamentals 等表结构。
 
 A 股相关的 trade_calendar / stock_basic / daily_status / index_members 四张表
 与美股共用一份 DDL: A 股数据建议放在单独的库文件(如 ashare.db), 那里的
@@ -52,6 +52,28 @@ CREATE_TABLES = """
         revenue             DOUBLE,
         total_assets        DOUBLE,
         PRIMARY KEY (ticker, period_end)
+    );
+
+    -- SEC 基本面点时长表: 每行是某份申报文件(accn, filed)对某个期间报告的某个
+    -- 标准字段的值; 同一期间的原始申报与后续重述/比较期版本全部保留, 读取时
+    -- 按 filed <= 时点 取最新版本。period_months: 0=时点(资产负债表), 3/6/9/12=期间。
+    CREATE TABLE IF NOT EXISTS fundamentals (
+        ticker          VARCHAR NOT NULL,
+        cik             VARCHAR,
+        field           VARCHAR NOT NULL,
+        concept         VARCHAR,
+        unit            VARCHAR,
+        period_start    DATE,
+        period_end      DATE NOT NULL,
+        period_months   INTEGER NOT NULL,
+        value           DOUBLE,
+        fy              INTEGER,
+        fp              VARCHAR,
+        form            VARCHAR,
+        accn            VARCHAR NOT NULL,
+        filed           DATE NOT NULL,
+        derived         BOOLEAN NOT NULL,
+        PRIMARY KEY (ticker, field, period_end, period_months, accn)
     );
 
     CREATE TABLE IF NOT EXISTS trade_calendar (

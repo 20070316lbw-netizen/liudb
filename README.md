@@ -23,6 +23,7 @@
 | `prices` | `get_prices(...)` | `date`, `ticker`, `open`, `high`, `low`, `close`, `adj_close`, `volume` <br> **PK**: `(ticker, date)` |
 | `risk_free_rate` | `get_risk_free_rate(...)` | `date`, `series`, `value` <br> **PK**: `(series, date)` |
 | `roe` | `get_roe(...)` / `get_roe_batch()` | `ticker`, `period_end`, `net_income`, `beginning_equity`, `ending_equity`, `average_equity`, `roe`, `roe_percent` <br> **PK**: `(ticker, period_end)` |
+| `fundamentals` | `sources.sec.get_fundamentals(_batch)(...)` | `ticker`, `cik`, `field`, `concept`, `unit`, `period_start`, `period_end`, `period_months`, `value`, `fy`, `fp`, `form`, `accn`, `filed`, `derived` <br> **PK**: `(ticker, field, period_end, period_months, accn)` <br> 同一期间的每个申报版本各占一行, 点时查询按 `filed` 做 as-of |
 
 A 股(数据来自 `sources.cn`, 建议单独放一个库文件, 如 `ashare.db`; 那里的 `prices`
 表存 A 股日线, 结构与美股完全相同: `close` 不复权、`adj_close` 后复权):
@@ -46,11 +47,12 @@ src/liudb/
 ├── schema.py             # 表结构初始化 (init_schema)
 ├── statements/           # SQL 语句集中管理 (避免与 sql 模块撞名)
 │   ├── __init__.py
-│   └── ddl.py            # 全部数据表的 CREATE TABLE DDL(含 A 股 4 张表)
+│   └── ddl.py            # 全部数据表的 CREATE TABLE DDL(含 fundamentals 与 A 股 4 张表)
 ├── writer.py             # 数据写入层 (save_* , A 股表共用 _upsert)
 └── reader/               # 数据读取层
     ├── query.py / registry.py   # prices 的注册表查询 (Query / build_sql / loader)
     ├── prices.py 等             # 各表的 load_* 函数
+    ├── fundamentals.py          # SEC 基本面的点时查询(快照/面板/TTM)
     └── ashare.py                # A 股 4 张表的 load_* 与 load_latest_dates
 ```
 
@@ -120,7 +122,49 @@ df_roe = load_roe(tickers=["AAPL"])
 
 > **提示**：同样支持 `read_*` 别名：`read_constituents`、`read_prices`、`read_risk_free_rate`、`read_roe`。
 
-### 4. A 股(沪深300 日线)
+### 4. SEC 基本面(点时 / PIT)
+
+```python
+import pandas as pd
+from sources import get_sp500_constituents
+from sources.sec import get_fundamentals_batch
+from liudb import (
+    load_fundamentals_panel, load_fundamentals_pit, load_fundamentals_ttm,
+    load_latest_filed, save_fundamentals,
+)
+
+DB = "sp500.db"
+
+# 抓取入库: 每只股票一次 SEC 请求, S&P 500 全量几分钟; 重复写入按主键覆盖
+tickers = get_sp500_constituents()["ticker"].str.replace(".", "-").tolist()
+save_fundamentals(get_fundamentals_batch(tickers), DB)
+
+# 某一天能看到的快照(只用 filed <= as_of 的版本, 重述在公布之后才生效)
+snap = load_fundamentals_pit("2020-06-30", fields=["total_equity", "net_income"], path=DB)
+
+# 调仓日面板: 每个日期取当时已公布的最近一期
+rebal = pd.date_range("2016-01-31", "2026-08-31", freq="ME")
+equity = load_fundamentals_panel(rebal, fields="total_equity", path=DB)
+
+# 滚动四季度(TTM): 最近 4 个单季求和, 季度不连续或不齐时不返回
+ttm = load_fundamentals_ttm(rebal, fields=["net_income", "operating_cash_flow", "capex"], path=DB)
+
+latest = load_latest_filed(path=DB)   # 每只股票最近申报日, 决定哪些需要重抓
+```
+
+读取口径:
+
+- **as-of 规则**: 时点 t 看到的是 `filed <= t` 的版本中最新申报的那个; 同一天多个
+  版本时报告值优先于推导值。`filed` 是 EDGAR 官方申报日(美东 17:30 之后提交的
+  记到下一个工作日), 用 t 日收盘信号、t+1 成交的回测可以直接用。
+- `load_fundamentals_panel` 默认 `max_staleness_days=550`: 最近一期比日期旧太多
+  (停止申报/退市)就不返回; 传 `None` 不限。
+- `load_fundamentals_ttm` 只对金额类字段有意义(收入、利润、现金流等), 用
+  `period_months=3` 的单季值(含 sources 推导的 Q4 等)求和, 默认最近一个单季超过
+  200 天未更新就不返回。
+- `load_fundamentals` 返回不做取舍的原始版本行, 用于核对。
+
+### 5. A 股(沪深300 日线)
 
 ```python
 from sources.cn import (

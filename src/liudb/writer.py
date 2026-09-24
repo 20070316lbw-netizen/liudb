@@ -181,6 +181,56 @@ def save_roe(df: pd.DataFrame, path: str = DEFAULT_DB_PATH) -> None:
         logger.info(f"成功存入 {len(data)} 条 ROE 记录")
 
 
+# ---------------------------------------------------------------- SEC 基本面
+
+_FUNDAMENTAL_COLUMNS = [
+    "ticker",
+    "cik",
+    "field",
+    "concept",
+    "unit",
+    "period_start",
+    "period_end",
+    "period_months",
+    "value",
+    "fy",
+    "fp",
+    "form",
+    "accn",
+    "filed",
+    "derived",
+]
+
+
+def save_fundamentals(df: pd.DataFrame, path: str = DEFAULT_DB_PATH) -> None:
+    """写入或更新 SEC 基本面点时长表, 按 (ticker, field, period_end, period_months, accn)
+    主键覆盖。
+
+    可以直接传 sources.sec.get_fundamentals / get_fundamentals_batch 的输出。同一期间
+    的不同申报版本 accn 不同, 会各自保留, 这正是点时查询需要的。
+
+    Args:
+        df: 列为 [ticker, cik, field, concept, unit, period_start, period_end,
+            period_months, value, fy, fp, form, accn, filed, derived] 的 DataFrame,
+            必须包含 ticker、field、period_end、period_months、accn、filed。
+        path: 数据库文件路径。
+
+    Raises:
+        ValueError: 缺少必需列。
+    """
+    data = df
+    if not df.empty and "derived" not in df.columns:
+        data = df.assign(derived=False)
+    _upsert(
+        data,
+        "fundamentals",
+        _FUNDAMENTAL_COLUMNS,
+        {"ticker", "field", "period_end", "period_months", "accn", "filed"},
+        date_columns=["period_start", "period_end", "filed"],
+        path=path,
+    )
+
+
 # ---------------------------------------------------------------- A 股
 
 _TRADE_CALENDAR_COLUMNS = ["date", "is_open"]

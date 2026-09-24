@@ -1,5 +1,7 @@
 # liudb
 
+[![CI](https://github.com/20070316lbw-netizen/liudb/actions/workflows/ci.yml/badge.svg)](https://github.com/20070316lbw-netizen/liudb/actions/workflows/ci.yml)
+
 基于 DuckDB 的个人量化数据存储包，为后续量化框架提供底层数据持久化与读取服务，数据源对齐 `sources`。
 
 ---
@@ -22,6 +24,17 @@
 | `risk_free_rate` | `get_risk_free_rate(...)` | `date`, `series`, `value` <br> **PK**: `(series, date)` |
 | `roe` | `get_roe(...)` / `get_roe_batch()` | `ticker`, `period_end`, `net_income`, `beginning_equity`, `ending_equity`, `average_equity`, `roe`, `roe_percent` <br> **PK**: `(ticker, period_end)` |
 
+A 股(数据来自 `sources.cn`, 建议单独放一个库文件, 如 `ashare.db`; 那里的 `prices`
+表存 A 股日线, 结构与美股完全相同: `close` 不复权、`adj_close` 后复权):
+
+| 表名 | 对应 sources 数据 | 字段与主键 |
+|---|---|---|
+| `prices` | `sources.cn.get_cn_prices(...)` / `get_cn_daily_bars(...)` | 同上 |
+| `daily_status` | `sources.cn.get_cn_daily_bars(...)` | `date`, `ticker`, `amount`, `pre_close`, `turnover`, `pct_chg`, `is_suspended`, `is_st` <br> **PK**: `(ticker, date)` |
+| `trade_calendar` | `sources.cn.get_cn_trade_calendar(...)` | `date` (PK), `is_open` |
+| `stock_basic` | `sources.cn.get_cn_stock_basic(...)` | `ticker` (PK), `name`, `list_date`, `delist_date`, `sec_type`, `is_listed` |
+| `index_members` | `sources.cn.get_cn_index_members(_history)(...)` | `index_code`, `date`(快照日), `ticker`, `name`, `update_date` <br> **PK**: `(index_code, date, ticker)` |
+
 ---
 
 ## 目录结构
@@ -33,9 +46,12 @@ src/liudb/
 ├── schema.py             # 表结构初始化 (init_schema)
 ├── statements/           # SQL 语句集中管理 (避免与 sql 模块撞名)
 │   ├── __init__.py
-│   └── ddl.py            # 4 张数据表的 CREATE TABLE DDL
-├── writer.py             # 数据写入层 (save_constituents, save_prices, save_risk_free_rate, save_roe)
-└── reader.py             # 数据读取层 (load_constituents, load_prices, load_risk_free_rate, load_roe)
+│   └── ddl.py            # 全部数据表的 CREATE TABLE DDL(含 A 股 4 张表)
+├── writer.py             # 数据写入层 (save_* , A 股表共用 _upsert)
+└── reader/               # 数据读取层
+    ├── query.py / registry.py   # prices 的注册表查询 (Query / build_sql / loader)
+    ├── prices.py 等             # 各表的 load_* 函数
+    └── ashare.py                # A 股 4 张表的 load_* 与 load_latest_dates
 ```
 
 ---
@@ -104,10 +120,44 @@ df_roe = load_roe(tickers=["AAPL"])
 
 > **提示**：同样支持 `read_*` 别名：`read_constituents`、`read_prices`、`read_risk_free_rate`、`read_roe`。
 
+### 4. A 股(沪深300 日线)
+
+```python
+from sources.cn import (
+    get_cn_daily_bars, get_cn_index_members_history, get_cn_trade_calendar, session,
+)
+from liudb import (
+    load_index_members, load_latest_dates, load_trade_calendar,
+    save_daily_status, save_index_members, save_prices, save_trade_calendar,
+)
+
+DB = "ashare.db"
+
+with session():
+    members = get_cn_index_members_history("hs300", "2015-01-01")   # 月度成分快照
+    save_index_members(members, DB)
+    save_trade_calendar(get_cn_trade_calendar("2015-01-01"), DB)
+
+    tickers = sorted(members["ticker"].unique())                     # 含曾经的成分股
+    bars = get_cn_daily_bars(tickers, start="2015-01-01")
+    save_prices(bars, DB)          # 行情列 -> prices
+    save_daily_status(bars, DB)    # 状态列 -> daily_status
+
+# 读取
+universe = load_index_members("000300.SH", "2020-06-30", path=DB)   # 截至该日的最近一份快照
+days = load_trade_calendar("2024-01-01", "2024-12-31", open_only=True, path=DB)
+latest = load_latest_dates("prices", path=DB)   # 每只股票已入库到哪天, 增量抓取从次日开始
+```
+
 ---
 
 ## 开发与测试
 
 ```bash
+uv run ruff check .
 uv run pytest
 ```
+
+CI(`.github/workflows/ci.yml`)在 push / PR 到 main 时按 `uv.lock` 安装依赖,
+跑同样的 ruff 与 pytest。ruff 版本上界锁死, 规则集在 `pyproject.toml` 里显式写出,
+与 sources 保持一致。

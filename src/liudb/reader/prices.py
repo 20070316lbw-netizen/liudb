@@ -38,7 +38,9 @@ def load_prices(
         按 [ticker, date] 升序排列。表不存在或无匹配记录时返回保留列结构的空 DataFrame。
 
     Example:
-        >>> prices = load_prices(tickers="AAPL", start="2024-01-01", end="2024-03-01")  # doctest: +SKIP
+        >>> prices = load_prices(  # doctest: +SKIP
+        ...     tickers="AAPL", start="2024-01-01", end="2024-03-01"
+        ... )
         >>> prices.columns.tolist()  # doctest: +SKIP
         ['date', 'ticker', 'open', 'high', 'low', 'close', 'adj_close', 'volume']
     """

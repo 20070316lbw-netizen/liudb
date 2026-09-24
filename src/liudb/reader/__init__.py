@@ -8,9 +8,19 @@
   这次重构范围内。
 - `load_prices` 是保留给旧调用方(如 minibacktest)过渡用的兼容接口, 返回
   未经复权改写的物理列; 新代码建议改用 `Query`/`loader`。
+- A 股的 trade_calendar/stock_basic/daily_status/index_members 四张表的读取
+  在 `ashare` 模块里, 另有 `load_latest_dates` 供增量抓取确定起点。
 """
 from __future__ import annotations
 
+from liudb.reader.ashare import (
+    load_daily_status,
+    load_index_members,
+    load_index_members_history,
+    load_latest_dates,
+    load_stock_basic,
+    load_trade_calendar,
+)
 from liudb.reader.constituents import load_constituents
 from liudb.reader.prices import load_prices
 from liudb.reader.query import Query, build_sql, loader
@@ -24,8 +34,14 @@ __all__ = [
     "ValidTableName",
     "build_sql",
     "load_constituents",
+    "load_daily_status",
+    "load_index_members",
+    "load_index_members_history",
+    "load_latest_dates",
     "load_prices",
     "load_risk_free_rate",
     "load_roe",
+    "load_stock_basic",
+    "load_trade_calendar",
     "loader",
 ]

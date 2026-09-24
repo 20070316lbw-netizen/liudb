@@ -45,7 +45,8 @@ def load_roe(
     Example:
         >>> roe = load_roe(tickers="AAPL")  # doctest: +SKIP
         >>> roe.columns.tolist()  # doctest: +SKIP
-        ['ticker', 'period_end', 'net_income', 'beginning_equity', 'ending_equity', 'average_equity', 'roe', 'roe_percent']
+        ['ticker', 'period_end', 'net_income', 'beginning_equity', 'ending_equity',
+         'average_equity', 'roe', 'roe_percent']
     """
     conditions: list[str] = []
     params: list[object] = []

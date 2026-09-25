@@ -1,7 +1,7 @@
 """数据库建表 DDL, 定义 constituents、prices、risk_free_rate、roe、fundamentals 等表结构。
 
-A 股相关的 trade_calendar / stock_basic / daily_status / index_members 四张表
-与美股共用一份 DDL: A 股数据建议放在单独的库文件(如 ashare.db), 那里的
+A 股相关的 trade_calendar / stock_basic / daily_status / index_members / intraday_bars
+五张表与美股共用一份 DDL: A 股数据建议放在单独的库文件(如 ashare.db), 那里的
 prices 表存 A 股日线, 结构与美股完全相同, 下游读取代码不用区分市场。
 """
 from __future__ import annotations
@@ -109,5 +109,22 @@ CREATE_TABLES = """
         name        VARCHAR,
         update_date DATE,
         PRIMARY KEY (index_code, date, ticker)
+    );
+
+    -- A 股分钟线(sources.cn.get_cn_intraday_bars 的输出)。ts 是 bar 的**结束时间**,
+    -- 30 分钟线每个交易日 8 根(10:00 ... 15:00)。freq 为周期分钟数('5'/'15'/'30'/'60'),
+    -- 放进主键里, 不同周期共用一张表。OHLC 不复权, adj_close 后复权, 与日线口径一致。
+    CREATE TABLE IF NOT EXISTS intraday_bars (
+        freq        VARCHAR NOT NULL,
+        ts          TIMESTAMP NOT NULL,
+        ticker      VARCHAR NOT NULL,
+        open        DOUBLE,
+        high        DOUBLE,
+        low         DOUBLE,
+        close       DOUBLE NOT NULL,
+        adj_close   DOUBLE,
+        volume      DOUBLE,
+        amount      DOUBLE,
+        PRIMARY KEY (freq, ticker, ts)
     );
 """

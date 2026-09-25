@@ -14,12 +14,15 @@ from liudb import (
     load_daily_status,
     load_index_members,
     load_index_members_history,
+    load_intraday_bars,
     load_latest_dates,
+    load_latest_ts,
     load_prices,
     load_stock_basic,
     load_trade_calendar,
     save_daily_status,
     save_index_members,
+    save_intraday_bars,
     save_prices,
     save_stock_basic,
     save_trade_calendar,
@@ -61,7 +64,8 @@ def _bars() -> pd.DataFrame:
 def test_new_tables_created(db_path):
     with get_duckdb(path=db_path, read_only=True) as con:
         tables = set(con.execute("SHOW TABLES").df()["name"])
-    assert {"trade_calendar", "stock_basic", "daily_status", "index_members"} <= tables
+    assert {"trade_calendar", "stock_basic", "daily_status", "index_members",
+            "intraday_bars"} <= tables
 
 
 def test_bars_split_into_prices_and_status(db_path):
@@ -191,3 +195,109 @@ def test_readers_on_missing_db_return_empty(tmp_path):
     init_schema(path=missing)  # 建库但不建数据
     assert list(load_trade_calendar(path=missing).columns) == ["date", "is_open"]
     assert load_index_members("000300.SH", path=missing).empty
+
+
+# ---------------------------------------------------------------- intraday_bars
+
+_INTRADAY_COLUMNS = [
+    "ts", "ticker", "open", "high", "low", "close", "adj_close", "volume", "amount",
+]
+
+
+def _intraday(day: str, ticker: str = "510300.SH", close: float = 4.6) -> pd.DataFrame:
+    """模拟 sources.cn.get_cn_intraday_bars 的输出: 某一天的 8 根 30 分钟线。"""
+    times = ["10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00"]
+    n = len(times)
+    return pd.DataFrame(
+        {
+            "ts": pd.to_datetime([f"{day} {t}" for t in times]),
+            "ticker": ticker,
+            "open": [close] * n,
+            "high": [close + 0.01] * n,
+            "low": [close - 0.01] * n,
+            "close": [close] * n,
+            "adj_close": [close * 10] * n,
+            "volume": [1e7] * n,
+            "amount": [close * 1e7] * n,
+        }
+    )
+
+
+def test_intraday_roundtrip_keeps_time(db_path):
+    save_intraday_bars(_intraday("2026-09-23"), freq="30", path=db_path)
+
+    df = load_intraday_bars("510300.SH", path=db_path)
+    assert list(df.columns) == _INTRADAY_COLUMNS
+    assert len(df) == 8
+    # 时间部分没有被截断成日期
+    assert df["ts"].iloc[0] == pd.Timestamp("2026-09-23 10:00")
+    assert df["ts"].iloc[-1] == pd.Timestamp("2026-09-23 15:00")
+    assert df["adj_close"].iloc[0] == 46.0
+
+
+def test_intraday_upsert_and_freq_isolation(db_path):
+    save_intraday_bars(_intraday("2026-09-23"), freq=30, path=db_path)
+    changed = _intraday("2026-09-23", close=5.0).iloc[[0]]
+    save_intraday_bars(changed, freq="30", path=db_path)
+    save_intraday_bars(_intraday("2026-09-23", close=9.9), freq="60", path=db_path)
+
+    thirty = load_intraday_bars(freq="30", path=db_path)
+    assert len(thirty) == 8  # 覆盖而不是新增
+    assert thirty["close"].iloc[0] == 5.0
+    assert thirty["close"].iloc[1] == 4.6
+    assert (load_intraday_bars(freq="60", path=db_path)["close"] == 9.9).all()
+    assert load_intraday_bars(freq="5", path=db_path).empty
+
+
+def test_intraday_date_filter_is_inclusive_by_trading_day(db_path):
+    for day in ["2026-09-22", "2026-09-23", "2026-09-24"]:
+        save_intraday_bars(_intraday(day), path=db_path)
+
+    df = load_intraday_bars(start="2026-09-23", end="2026-09-23", path=db_path)
+    assert len(df) == 8  # end 当天 15:00 那根也在
+    assert df["ts"].dt.date.unique().tolist() == [pd.Timestamp("2026-09-23").date()]
+
+    assert len(load_intraday_bars(start="2026-09-23", path=db_path)) == 16
+
+
+def test_intraday_ticker_filter_and_order(db_path):
+    save_intraday_bars(
+        pd.concat([_intraday("2026-09-23", "600519.SH"), _intraday("2026-09-23", "159915.SZ")]),
+        path=db_path,
+    )
+    df = load_intraday_bars(["159915.SZ", "600519.SH"], path=db_path)
+    assert df["ticker"].iloc[0] == "159915.SZ"
+    assert df.groupby("ticker")["ts"].apply(lambda s: s.is_monotonic_increasing).all()
+    assert set(load_intraday_bars("600519.SH", path=db_path)["ticker"]) == {"600519.SH"}
+
+
+def test_load_latest_ts(db_path):
+    save_intraday_bars(_intraday("2026-09-23"), path=db_path)
+    save_intraday_bars(_intraday("2026-09-24", "159915.SZ").iloc[:3], path=db_path)
+    save_intraday_bars(_intraday("2026-09-25"), freq="60", path=db_path)
+
+    latest = load_latest_ts(path=db_path)
+    assert latest["ticker"].tolist() == ["159915.SZ", "510300.SH"]
+    assert latest["last_ts"].tolist() == [
+        pd.Timestamp("2026-09-24 11:00"), pd.Timestamp("2026-09-23 15:00"),
+    ]
+    assert load_latest_ts("510300.SH", freq="60", path=db_path)["last_ts"].tolist() == [
+        pd.Timestamp("2026-09-25 15:00"),
+    ]
+
+
+@pytest.mark.parametrize("freq", ["d", "0", "-30", ""])
+def test_save_intraday_rejects_bad_freq(db_path, freq):
+    with pytest.raises(ValueError, match="freq"):
+        save_intraday_bars(_intraday("2026-09-23"), freq=freq, path=db_path)
+
+
+def test_save_intraday_requires_keys(db_path):
+    with pytest.raises(ValueError, match="缺少必需列"):
+        save_intraday_bars(pd.DataFrame({"ticker": ["510300.SH"]}), path=db_path)
+
+
+def test_intraday_readers_on_empty_db(db_path):
+    assert list(load_intraday_bars(path=db_path).columns) == _INTRADAY_COLUMNS
+    assert list(load_latest_ts(path=db_path).columns) == ["ticker", "last_ts"]
+    assert load_latest_ts(path=db_path).empty

@@ -1,5 +1,5 @@
-"""A 股相关表的读取: trade_calendar / stock_basic / daily_status / index_members,
-以及增量抓取时用的"每只股票已入库到哪一天"查询。
+"""A 股相关表的读取: trade_calendar / stock_basic / daily_status / index_members /
+intraday_bars, 以及增量抓取时用的"每只股票已入库到哪一天(哪一根 bar)"查询。
 
 与其他 load_* 一致: 过滤条件走 `?` 占位符; 表不存在或查询失败时返回保留列
 结构的空 DataFrame。日期参数都是闭区间。
@@ -31,6 +31,10 @@ _DAILY_STATUS_COLUMNS = [
 ]
 _INDEX_MEMBER_COLUMNS = ["index_code", "date", "ticker", "name", "update_date"]
 _LATEST_DATE_COLUMNS = ["ticker", "last_date"]
+_INTRADAY_COLUMNS = [
+    "ts", "ticker", "open", "high", "low", "close", "adj_close", "volume", "amount",
+]
+_LATEST_TS_COLUMNS = ["ticker", "last_ts"]
 
 LatestDateTable = Literal["prices", "daily_status"]
 _LATEST_DATE_TABLES: tuple[str, ...] = ("prices", "daily_status")
@@ -185,6 +189,63 @@ def load_latest_dates(
         sql += " WHERE " + " AND ".join(conditions)
     sql += " GROUP BY ticker ORDER BY ticker"
     return _run(sql, params, _LATEST_DATE_COLUMNS, path)
+
+
+def load_intraday_bars(
+    tickers: str | Sequence[str] | None = None,
+    start: DateLike | None = None,
+    end: DateLike | None = None,
+    *,
+    freq: str | int = "30",
+    path: str = DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """读取某一周期的 A 股分钟线。
+
+    日期过滤按 ts 所在的**交易日**计算, 两端都含: end="2026-09-24" 会包含当天
+    15:00 那根 bar。
+
+    Args:
+        tickers: 单个代码或代码列表, 默认不限。
+        start: 起始日期(含), 默认不限。
+        end: 结束日期(含), 默认不限。
+        freq: 周期分钟数, 默认 "30"。
+        path: 数据库文件路径。
+
+    Returns:
+        DataFrame, 列为 [ts, ticker, open, high, low, close, adj_close, volume, amount]
+        (与 sources.cn.get_cn_intraday_bars 的输出一致), 按 (ticker, ts) 升序。
+    """
+    conditions, params = _ticker_filter(tickers)
+    date_conditions, date_params = _date_range("CAST(ts AS DATE)", start, end)
+    return _select("intraday_bars", _INTRADAY_COLUMNS,
+                   ["freq = ?", *conditions, *date_conditions],
+                   [str(freq).strip(), *params, *date_params],
+                   order_by="ticker, ts", path=path)
+
+
+def load_latest_ts(
+    tickers: str | Sequence[str] | None = None,
+    *,
+    freq: str | int = "30",
+    path: str = DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """查询每只证券某一周期分钟线已入库的最后一根 bar 的时间, 供增量抓取确定起点。
+
+    Args:
+        tickers: 单个代码或代码列表, 默认不限。
+        freq: 周期分钟数, 默认 "30"。
+        path: 数据库文件路径。
+
+    Returns:
+        DataFrame, 列为 [ticker, last_ts], 按 ticker 升序; 库里没有的证券不出现。
+    """
+    conditions, params = _ticker_filter(tickers)
+    sql = (
+        "SELECT ticker, max(ts) AS last_ts FROM intraday_bars WHERE "
+        + " AND ".join(["freq = ?", *conditions])
+        + " GROUP BY ticker ORDER BY ticker"
+    )
+    return _run(sql, [str(freq).strip(), *params], _LATEST_TS_COLUMNS, path)
 
 
 # ---------------------------------------------------------------- helpers

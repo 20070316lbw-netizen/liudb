@@ -246,6 +246,9 @@ _DAILY_STATUS_COLUMNS = [
     "is_st",
 ]
 _INDEX_MEMBER_COLUMNS = ["index_code", "date", "ticker", "name", "update_date"]
+_INTRADAY_COLUMNS = [
+    "freq", "ts", "ticker", "open", "high", "low", "close", "adj_close", "volume", "amount",
+]
 
 
 def save_trade_calendar(df: pd.DataFrame, path: str = DEFAULT_DB_PATH) -> None:
@@ -316,6 +319,42 @@ def save_index_members(df: pd.DataFrame, path: str = DEFAULT_DB_PATH) -> None:
             date_columns=["date", "update_date"], path=path)
 
 
+def save_intraday_bars(
+    df: pd.DataFrame,
+    freq: str | int = "30",
+    path: str = DEFAULT_DB_PATH,
+) -> None:
+    """写入或更新 A 股分钟线, 按 (freq, ticker, ts) 主键覆盖。
+
+    可以直接传 sources.cn.get_cn_intraday_bars 的输出(它不带 freq 列, 由参数给出;
+    传入的 df 若自带 freq 列会被参数覆盖, 保证一批数据只落在一个周期下)。
+
+    Args:
+        df: 包含 [ts, ticker, open, high, low, close, adj_close, volume, amount] 的
+            DataFrame, 必须包含 ts、ticker 与 close。ts 为 bar 结束时间。
+        freq: 周期分钟数, 如 "30" 或 30。
+        path: 数据库文件路径。
+
+    Raises:
+        ValueError: 缺少必需列, 或 freq 不是正整数分钟数。
+
+    Example:
+        >>> bars = get_cn_intraday_bars(["510300.SH"], start="2026-01-01")  # doctest: +SKIP
+        >>> save_intraday_bars(bars, freq="30", path="ashare.db")  # doctest: +SKIP
+    """
+    freq_str = _check_freq(freq)
+    data = df if df.empty else df.assign(freq=freq_str)
+    _upsert(data, "intraday_bars", _INTRADAY_COLUMNS, {"freq", "ts", "ticker", "close"},
+            date_columns=[], timestamp_columns=("ts",), path=path)
+
+
+def _check_freq(freq: str | int) -> str:
+    freq_str = str(freq).strip()
+    if not freq_str.isdigit() or int(freq_str) <= 0:
+        raise ValueError(f"freq 必须是正整数分钟数, 收到 {freq!r}")
+    return str(int(freq_str))
+
+
 def _upsert(
     df: pd.DataFrame,
     table: str,
@@ -324,9 +363,11 @@ def _upsert(
     *,
     date_columns: list[str],
     path: str,
+    timestamp_columns: tuple[str, ...] = (),
 ) -> None:
     """通用的 "校验 -> 补齐缺失列 -> 转日期 -> INSERT OR REPLACE" 写入流程。
 
+    date_columns 截断为日期; timestamp_columns 保留到秒(用于分钟线的 ts)。
     table / columns 都是本模块里写死的常量, 不接受外部输入。
     """
     if df.empty:
@@ -344,6 +385,8 @@ def _upsert(
     data = data[columns].copy()
     for col in date_columns:
         data[col] = pd.to_datetime(data[col]).dt.date
+    for col in timestamp_columns:
+        data[col] = pd.to_datetime(data[col])
 
     init_schema(path=path)
 

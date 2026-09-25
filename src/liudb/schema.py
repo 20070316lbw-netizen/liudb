@@ -13,7 +13,7 @@ def init_schema(path: str = DEFAULT_DB_PATH) -> None:
 
     Returns:
         None。在目标数据库中创建 constituents、prices、risk_free_rate、roe、financials、fundamentals
-        以及 A 股的 trade_calendar、stock_basic、daily_status、index_members 表。
+        以及 A 股的 trade_calendar、stock_basic、daily_status、index_members、intraday_bars 表。
 
     Example:
         >>> init_schema("sp500.db")  # doctest: +SKIP

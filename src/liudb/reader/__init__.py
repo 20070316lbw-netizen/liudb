@@ -8,8 +8,9 @@
   这次重构范围内。
 - `load_prices` 是保留给旧调用方(如 minibacktest)过渡用的兼容接口, 返回
   未经复权改写的物理列; 新代码建议改用 `Query`/`loader`。
-- A 股的 trade_calendar/stock_basic/daily_status/index_members 四张表的读取
-  在 `ashare` 模块里, 另有 `load_latest_dates` 供增量抓取确定起点。
+- A 股的 trade_calendar/stock_basic/daily_status/index_members/intraday_bars
+  五张表的读取在 `ashare` 模块里, 另有 `load_latest_dates` / `load_latest_ts`
+  供日线 / 分钟线增量抓取确定起点。
 - SEC 基本面(fundamentals 表)的点时查询在 `fundamentals` 模块里: 快照
   `load_fundamentals_pit`、调仓日面板 `load_fundamentals_panel`、滚动四季度
   `load_fundamentals_ttm`, 均按申报日 filed 做 as-of, 不会用到未来数据。
@@ -20,7 +21,9 @@ from liudb.reader.ashare import (
     load_daily_status,
     load_index_members,
     load_index_members_history,
+    load_intraday_bars,
     load_latest_dates,
+    load_latest_ts,
     load_stock_basic,
     load_trade_calendar,
 )
@@ -51,8 +54,10 @@ __all__ = [
     "load_fundamentals_ttm",
     "load_index_members",
     "load_index_members_history",
+    "load_intraday_bars",
     "load_latest_dates",
     "load_latest_filed",
+    "load_latest_ts",
     "load_prices",
     "load_risk_free_rate",
     "load_roe",

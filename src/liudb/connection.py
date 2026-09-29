@@ -6,6 +6,10 @@ from pathlib import Path
 import duckdb
 
 DEFAULT_DB_PATH = "sp500.db"
+"""美股(S&P 500 / SEC)默认库文件。"""
+
+ASHARE_DB_PATH = "ashare.db"
+"""A 股默认库文件; 两套表结构互不引用, 各自独立建库。"""
 
 
 def get_duckdb(

@@ -1,7 +1,7 @@
 [project]
 name = "liudb"
 version = "0.1.0"
-description = "基于 DuckDB 的轻量量化数据存储包，适配 sources 数据源"
+description = "基于 DuckDB 的轻量量化数据存储包"
 readme = "README.md"
 authors = [
     { name = "20070316lbw-netizen", email = "lbw20070316lbw@outlook.com" }
@@ -10,8 +10,10 @@ requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.5.5",
     "loguru>=0.7.3",
+    "numpy>=2.0",
     "pandas>=3.0.6",
     "pydantic>=2.13.4",
+    "sources",
 ]
 
 [build-system]
@@ -59,3 +61,6 @@ ignore = [
 # reader 里的 SQL 只把代码里写死的表名/列名(白名单)拼进字符串, 所有外部传入的
 # 值都走 DuckDB 的 `?` 占位符, 不存在注入; bandit 的 S608 在这里是误报。
 "src/liudb/reader/*" = ["S608"]
+
+[tool.uv.sources]
+sources = { git = "https://github.com/20070316lbw-netizen/sources.git", rev = "v0.1.1" }

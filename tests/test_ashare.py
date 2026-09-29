@@ -1,6 +1,6 @@
 """A 股相关表(trade_calendar/stock_basic/daily_status/index_members)的读写测试。
 
-输入 DataFrame 的形状与 sources.cn 各函数的输出保持一致(含可空布尔列、NaN、NaT),
+输入 DataFrame 的形状与 sources.ashare 各函数的输出保持一致(含可空布尔列、NaN、NaT),
 但不依赖 sources 包本身。
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ import pytest
 
 from liudb import (
     get_duckdb,
-    init_schema,
+    init_ashare_schema,
     load_daily_status,
     load_index_members,
     load_index_members_history,
@@ -20,10 +20,10 @@ from liudb import (
     load_prices,
     load_stock_basic,
     load_trade_calendar,
+    save_ashare_daily_bars,
     save_daily_status,
     save_index_members,
     save_intraday_bars,
-    save_prices,
     save_stock_basic,
     save_trade_calendar,
 )
@@ -32,12 +32,12 @@ from liudb import (
 @pytest.fixture
 def db_path(tmp_path):
     path = str(tmp_path / "ashare.db")
-    init_schema(path=path)
+    init_ashare_schema(path=path)
     return path
 
 
 def _bars() -> pd.DataFrame:
-    """模拟 sources.cn.get_cn_daily_bars 的输出。"""
+    """模拟 sources.ashare.get_daily_bars 的输出。"""
     df = pd.DataFrame(
         {
             "date": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-02", "2024-01-03"]),
@@ -70,11 +70,11 @@ def test_new_tables_created(db_path):
 
 def test_bars_split_into_prices_and_status(db_path):
     bars = _bars()
-    save_prices(bars, path=db_path)
-    save_daily_status(bars, path=db_path)
+    save_ashare_daily_bars(bars, path=db_path)
 
+    # adj_close 由前收推算的后复权因子重算, 覆盖 BaoStock 的原始值
     prices = load_prices(tickers="600519.SH", path=db_path)
-    assert prices["adj_close"].tolist() == [9000.0, 8973.7]
+    assert prices["adj_close"].tolist() == [1710.0, 1705.0]
 
     status = load_daily_status(tickers="000001.SZ", path=db_path)
     assert list(status.columns) == [
@@ -172,8 +172,8 @@ def test_index_members_point_in_time(db_path):
 
 def test_load_latest_dates(db_path):
     bars = _bars()
-    save_prices(bars[bars["date"] == "2024-01-02"], path=db_path)
-    save_prices(bars[bars["ticker"] == "600519.SH"], path=db_path)
+    save_ashare_daily_bars(bars[bars["date"] == "2024-01-02"], path=db_path)
+    save_ashare_daily_bars(bars[bars["ticker"] == "600519.SH"], path=db_path)
 
     latest = load_latest_dates("prices", path=db_path)
     assert latest["ticker"].tolist() == ["000001.SZ", "600519.SH"]
@@ -182,7 +182,9 @@ def test_load_latest_dates(db_path):
     only = load_latest_dates("prices", tickers=["600519.SH"], path=db_path)
     assert only["ticker"].tolist() == ["600519.SH"]
 
-    assert load_latest_dates("daily_status", path=db_path).empty
+    assert load_latest_dates("daily_status", path=db_path)["ticker"].tolist() == [
+        "000001.SZ", "600519.SH",
+    ]
 
 
 def test_load_latest_dates_rejects_unknown_table(db_path):
@@ -192,7 +194,7 @@ def test_load_latest_dates_rejects_unknown_table(db_path):
 
 def test_readers_on_missing_db_return_empty(tmp_path):
     missing = str(tmp_path / "nope.db")
-    init_schema(path=missing)  # 建库但不建数据
+    init_ashare_schema(path=missing)  # 建库但不建数据
     assert list(load_trade_calendar(path=missing).columns) == ["date", "is_open"]
     assert load_index_members("000300.SH", path=missing).empty
 
@@ -205,7 +207,7 @@ _INTRADAY_COLUMNS = [
 
 
 def _intraday(day: str, ticker: str = "510300.SH", close: float = 4.6) -> pd.DataFrame:
-    """模拟 sources.cn.get_cn_intraday_bars 的输出: 某一天的 8 根 30 分钟线。"""
+    """模拟 sources.ashare.get_intraday_bars 的输出: 某一天的 8 根 30 分钟线。"""
     times = ["10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00"]
     n = len(times)
     return pd.DataFrame(

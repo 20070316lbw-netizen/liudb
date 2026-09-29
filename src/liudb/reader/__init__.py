@@ -1,19 +1,7 @@
-"""数据读取包, 负责从 DuckDB 查询并返回清洗后的量化数据 DataFrame。
+"""共享查询引擎和旧版读取 API 的兼容汇总入口。
 
-- `prices` 表有一套基于注册表的查询路径: `registry.VALID` 登记允许查询的
-  (复权)列, `query.Query`/`build_sql`/`loader` 负责校验、拼 SQL、执行查询,
-  思路照抄 quant_lab/src/quant_lab/data 下的 PostgreSQL 版本, 只是换成了
-  DuckDB 的参数化占位符。
-- constituents/risk_free_rate/roe 三张表暂时保留原有的直接查询函数, 不在
-  这次重构范围内。
-- `load_prices` 是保留给旧调用方(如 minibacktest)过渡用的兼容接口, 返回
-  未经复权改写的物理列; 新代码建议改用 `Query`/`loader`。
-- A 股的 trade_calendar/stock_basic/daily_status/index_members/intraday_bars
-  五张表的读取在 `ashare` 模块里, 另有 `load_latest_dates` / `load_latest_ts`
-  供日线 / 分钟线增量抓取确定起点。
-- SEC 基本面(fundamentals 表)的点时查询在 `fundamentals` 模块里: 快照
-  `load_fundamentals_pit`、调仓日面板 `load_fundamentals_panel`、滚动四季度
-  `load_fundamentals_ttm`, 均按申报日 filed 做 as-of, 不会用到未来数据。
+市场专属读取接口分别位于 ``liudb.ashare`` 与 ``liudb.sp500``。这里汇总旧版名称，
+保持原有 ``from liudb import load_*`` 和 ``from liudb.reader import load_*`` 调用可用。
 """
 from __future__ import annotations
 

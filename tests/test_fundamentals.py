@@ -1,6 +1,6 @@
 """fundamentals 表(SEC 基本面点时长表)的写入与 as-of 读取测试。
 
-输入 DataFrame 的形状与 sources.sec.get_fundamentals 的输出一致, 但不依赖
+输入 DataFrame 的形状与 sources.sp500.sec.get_fundamentals 的输出一致, 但不依赖
 sources 包。虚构公司, 日历年财年:
 
     2023 单季 净利润: Q1 85 (2023-05-01 申报), Q2 95, Q3 100, Q4 120(推导, 2024-02-10)

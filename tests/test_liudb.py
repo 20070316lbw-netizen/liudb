@@ -6,7 +6,9 @@ import pytest
 
 from liudb import (
     get_duckdb,
+    init_ashare_schema,
     init_schema,
+    init_sp500_schema,
     insert_constituents,
     insert_prices,
     load_constituents,
@@ -191,6 +193,21 @@ def test_empty_dataframe_does_not_fail(db_path):
     save_roe(pd.DataFrame(columns=["ticker", "period_end"]), path=db_path)
 
 
+def test_sp500_upsert_rejects_duplicate_primary_keys(db_path):
+    original = pd.DataFrame([{"date": "2024-01-02", "ticker": "AAPL", "close": 182.0}])
+    save_prices(original, path=db_path)
+
+    duplicates = pd.DataFrame([
+        {"date": "2024-01-02", "ticker": "AAPL", "close": 183.0},
+        {"date": "2024-01-02", "ticker": "AAPL", "close": 184.0},
+    ])
+    with pytest.raises(ValueError, match="重复主键"):
+        save_prices(duplicates, path=db_path)
+
+    stored = load_prices(tickers="AAPL", path=db_path)
+    assert stored.loc[0, "close"] == 182.0
+
+
 def test_missing_required_columns_raises():
     with pytest.raises(ValueError):
         save_constituents(pd.DataFrame([{"wrong_col": 1}]))
@@ -200,3 +217,48 @@ def test_missing_required_columns_raises():
         save_risk_free_rate(pd.DataFrame([{"wrong_col": 1}]))
     with pytest.raises(ValueError):
         save_roe(pd.DataFrame([{"wrong_col": 1}]))
+
+
+def test_init_schema_is_market_specific(tmp_path):
+    """两组 DDL 各自完整, 互不建对方的表。"""
+    sp500 = str(tmp_path / "sp500.db")
+    ashare = str(tmp_path / "ashare.db")
+    init_sp500_schema(sp500)
+    init_ashare_schema(ashare)
+
+    def tables(path: str) -> set[str]:
+        with get_duckdb(path=path, read_only=True) as con:
+            return set(con.execute("SHOW TABLES").df()["name"])
+
+    sp, ash = tables(sp500), tables(ashare)
+    assert {"constituents", "prices", "risk_free_rate", "roe", "financials",
+            "fundamentals"} <= sp
+    assert not ({"trade_calendar", "stock_basic", "daily_status", "index_members",
+                 "intraday_bars"} & sp)
+    assert {"prices", "trade_calendar", "stock_basic", "daily_status", "index_members",
+            "intraday_bars"} <= ash
+    assert not ({"constituents", "risk_free_rate", "roe", "financials",
+                 "fundamentals"} & ash)
+
+
+def test_init_schema_rejects_unknown_market(tmp_path):
+    with pytest.raises(ValueError, match="market"):
+        init_schema(str(tmp_path / "x.db"), market="nasdaq")  # type: ignore[arg-type]
+
+
+def test_init_ashare_relaxes_legacy_intraday_close(tmp_path):
+    """旧库的 intraday_bars.close 是 NOT NULL, 建库时自动放开。"""
+    path = str(tmp_path / "legacy.db")
+    with get_duckdb(path=path) as con:
+        con.execute(
+            "CREATE TABLE intraday_bars ("
+            "  freq VARCHAR NOT NULL, ts TIMESTAMP NOT NULL, ticker VARCHAR NOT NULL,"
+            "  close DOUBLE NOT NULL, PRIMARY KEY (freq, ticker, ts))"
+        )
+    init_ashare_schema(path)
+    with get_duckdb(path=path, read_only=True) as con:
+        nullable = con.execute(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'intraday_bars' AND column_name = 'close'"
+        ).fetchone()[0]
+    assert nullable == "YES"

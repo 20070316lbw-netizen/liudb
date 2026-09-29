@@ -1,22 +1,29 @@
-"""数据库结构初始化模块，负责建表语句的执行。"""
+"""旧版 schema 接口的兼容转发层。"""
 from __future__ import annotations
 
-from liudb.connection import DEFAULT_DB_PATH, get_duckdb
-from liudb.statements import CREATE_TABLES
+from typing import Literal
+
+from liudb.ashare.schema import init_schema as init_ashare_schema
+from liudb.connection import ASHARE_DB_PATH, DEFAULT_DB_PATH
+from liudb.sp500.schema import init_schema as init_sp500_schema
+
+Market = Literal["sp500", "ashare"]
 
 
-def init_schema(path: str = DEFAULT_DB_PATH) -> None:
-    """初始化数据库表结构, 若表不存在则自动创建。
+def init_schema(path: str = DEFAULT_DB_PATH, *, market: Market = "sp500") -> None:
+    """兼容旧版按 market 参数初始化的接口。"""
+    if market == "sp500":
+        init_sp500_schema(path)
+    elif market == "ashare":
+        init_ashare_schema(path)
+    else:
+        raise ValueError(f"unknown market {market!r}, expected ['ashare', 'sp500']")
 
-    Args:
-        path: 数据库文件路径, 默认 "sp500.db"。
 
-    Returns:
-        None。在目标数据库中创建 constituents、prices、risk_free_rate、roe、financials、fundamentals
-        以及 A 股的 trade_calendar、stock_basic、daily_status、index_members、intraday_bars 表。
-
-    Example:
-        >>> init_schema("sp500.db")  # doctest: +SKIP
-    """
-    with get_duckdb(path=path) as con:
-        con.execute(CREATE_TABLES)
+__all__ = [
+    "ASHARE_DB_PATH",
+    "DEFAULT_DB_PATH",
+    "init_ashare_schema",
+    "init_schema",
+    "init_sp500_schema",
+]

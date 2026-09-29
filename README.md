@@ -2,206 +2,152 @@
 
 [![CI](https://github.com/20070316lbw-netizen/liudb/actions/workflows/ci.yml/badge.svg)](https://github.com/20070316lbw-netizen/liudb/actions/workflows/ci.yml)
 
-基于 DuckDB 的个人量化数据存储包，为后续量化框架提供底层数据持久化与读取服务，数据源对齐 `sources`。
+`liudb` 提供 DuckDB 表结构、DataFrame 清洗与存储、以及查询接口。抓取由调用方负责；
+`liudb` 的读写函数只接收 DataFrame，不会在内部发起网络请求或调用数据源。
 
----
-
-## 特性
-
-- **轻量进程内数据库**：基于 DuckDB，无需配置外部数据库服务端，零运维成本。
-- **与 Pandas / sources 无缝衔接**：直接接收从 `sources` 抓取的 DataFrame 并执行零拷贝存取。
-- **自动 Upsert 去重**：使用 `INSERT OR REPLACE` 语法，按业务主键自动覆盖更新，重复写入不报错。
-- **模块命名安全**：SQL 语句集中于 `statements/`（避免 `sql` 命名冲突），读写分立为 `writer.py` 与 `reader.py`，保持代码简洁明了。
-
----
-
-## 数据表结构
-
-| 表名 | 对应 sources 数据 | 字段与主键 |
-|---|---|---|
-| `constituents` | `get_sp500_constituents()` | `ticker` (PK), `name` |
-| `prices` | `get_prices(...)` | `date`, `ticker`, `open`, `high`, `low`, `close`, `adj_close`, `volume` <br> **PK**: `(ticker, date)` |
-| `risk_free_rate` | `get_risk_free_rate(...)` | `date`, `series`, `value` <br> **PK**: `(series, date)` |
-| `roe` | `get_roe(...)` / `get_roe_batch()` | `ticker`, `period_end`, `net_income`, `beginning_equity`, `ending_equity`, `average_equity`, `roe`, `roe_percent` <br> **PK**: `(ticker, period_end)` |
-| `fundamentals` | `sources.sec.get_fundamentals(_batch)(...)` | `ticker`, `cik`, `field`, `concept`, `unit`, `period_start`, `period_end`, `period_months`, `value`, `fy`, `fp`, `form`, `accn`, `filed`, `derived` <br> **PK**: `(ticker, field, period_end, period_months, accn)` <br> 同一期间的每个申报版本各占一行, 点时查询按 `filed` 做 as-of |
-
-A 股(数据来自 `sources.cn`, 建议单独放一个库文件, 如 `ashare.db`; 那里的 `prices`
-表存 A 股日线, 结构与美股完全相同: `close` 不复权、`adj_close` 后复权):
-
-| 表名 | 对应 sources 数据 | 字段与主键 |
-|---|---|---|
-| `prices` | `sources.cn.get_cn_prices(...)` / `get_cn_daily_bars(...)` | 同上 |
-| `daily_status` | `sources.cn.get_cn_daily_bars(...)` | `date`, `ticker`, `amount`, `pre_close`, `turnover`, `pct_chg`, `is_suspended`, `is_st` <br> **PK**: `(ticker, date)` |
-| `trade_calendar` | `sources.cn.get_cn_trade_calendar(...)` | `date` (PK), `is_open` |
-| `stock_basic` | `sources.cn.get_cn_stock_basic(...)` | `ticker` (PK), `name`, `list_date`, `delist_date`, `sec_type`, `is_listed` |
-| `index_members` | `sources.cn.get_cn_index_members(_history)(...)` | `index_code`, `date`(快照日), `ticker`, `name`, `update_date` <br> **PK**: `(index_code, date, ticker)` |
-
----
-
-## 目录结构
-
-```text
-src/liudb/
-├── __init__.py           # 导出常用操作函数与兼容别名
-├── connection.py         # DuckDB 连接管理 (get_duckdb, 支持文件与 :memory:)
-├── schema.py             # 表结构初始化 (init_schema)
-├── statements/           # SQL 语句集中管理 (避免与 sql 模块撞名)
-│   ├── __init__.py
-│   └── ddl.py            # 全部数据表的 CREATE TABLE DDL(含 fundamentals 与 A 股 4 张表)
-├── writer.py             # 数据写入层 (save_* , A 股表共用 _upsert)
-└── reader/               # 数据读取层
-    ├── query.py / registry.py   # prices 的注册表查询 (Query / build_sql / loader)
-    ├── prices.py 等             # 各表的 load_* 函数
-    ├── fundamentals.py          # SEC 基本面的点时查询(快照/面板/TTM)
-    └── ashare.py                # A 股 4 张表的 load_* 与 load_latest_dates
-```
-
----
-
-## 快速开始
-
-### 1. 初始化数据库
+项目按市场分开使用，默认数据库为 A 股 `ashare.db` 和 S&P 500 `sp500.db`：
 
 ```python
-from liudb import init_schema
+import liudb.ashare as ashare
+import liudb.sp500 as sp500
 
-# 初始化本地数据库表结构 (默认创建 sp500.db)
-init_schema("sp500.db")
+ashare.init_schema()  # ashare.db
+sp500.init_schema()   # sp500.db
 ```
 
-### 2. 存入数据 (从 sources 抓取后入库)
+## 只使用 liudb
 
-```python
-from sources import get_sp500_constituents, get_prices, get_risk_free_rate
-from sources.roe import get_roe_batch
-from liudb import (
-    save_constituents,
-    save_prices,
-    save_risk_free_rate,
-    save_roe,
-)
-
-# 1. 抓取并存入成分股
-constituents = get_sp500_constituents()
-save_constituents(constituents)
-
-# 2. 抓取并存入行情
-prices = get_prices(["AAPL", "MSFT"], start="2024-01-01", end="2024-06-01")
-save_prices(prices)
-
-# 3. 抓取并存入无风险利率
-rf = get_risk_free_rate(start="2024-01-01", end="2024-06-01")
-save_risk_free_rate(rf)
-
-# 4. 抓取并存入 ROE
-roe = get_roe_batch(["AAPL", "MSFT"])
-save_roe(roe)
-```
-
-> **提示**：习惯使用 `insert_*` 的用户可直接调用别名：`insert_constituents`、`insert_prices`、`insert_risk_free_rate`、`insert_roe`。
-
-### 3. 读取数据 (供策略与回测框架使用)
-
-```python
-from liudb import (
-    load_constituents,
-    load_prices,
-    load_risk_free_rate,
-    load_roe,
-)
-
-# 读取特定股票在指定时间区间的行情
-df_prices = load_prices(tickers=["AAPL", "MSFT"], start="2024-01-01", end="2024-03-01")
-
-# 读取无风险利率 (默认 DGS1MO)
-df_rf = load_risk_free_rate(start="2024-01-01")
-
-# 读取 ROE 财务指标
-df_roe = load_roe(tickers=["AAPL"])
-```
-
-> **提示**：同样支持 `read_*` 别名：`read_constituents`、`read_prices`、`read_risk_free_rate`、`read_roe`。
-
-### 4. SEC 基本面(点时 / PIT)
+调用方可以直接构造或从其他系统取得 DataFrame，再传给对应市场的写入函数。下例不导入
+数据源，展示了行情、基本资料、交易日历、成分、利率、ROE 和基本面的最小列契约：
 
 ```python
 import pandas as pd
-from sources import get_sp500_constituents
-from sources.sec import get_fundamentals_batch
-from liudb import (
-    load_fundamentals_panel, load_fundamentals_pit, load_fundamentals_ttm,
-    load_latest_filed, save_fundamentals,
-)
+import liudb.ashare as ashare
+import liudb.sp500 as sp500
 
-DB = "sp500.db"
+ashare.init_schema("ashare.db")
+sp500.init_schema("sp500.db")
 
-# 抓取入库: 每只股票一次 SEC 请求, S&P 500 全量几分钟; 重复写入按主键覆盖
-tickers = get_sp500_constituents()["ticker"].str.replace(".", "-").tolist()
-save_fundamentals(get_fundamentals_batch(tickers), DB)
+# 基本资料先入库，日线清洗可以据此修正 ETF 的 ST 标记。
+ashare.save_stock_basic(pd.DataFrame([{
+    "ticker": "510300.SH", "name": "沪深300ETF", "sec_type": "etf",
+}]), path="ashare.db")
 
-# 某一天能看到的快照(只用 filed <= as_of 的版本, 重述在公布之后才生效)
-snap = load_fundamentals_pit("2020-06-30", fields=["total_equity", "net_income"], path=DB)
+# A 股日线写入会同时保存 prices 和 daily_status，并在入库前清洗复权价与状态字段。
+daily = pd.DataFrame([{
+    "date": "2024-01-02", "ticker": "510300.SH", "close": 3.50,
+    "pre_close": 3.49, "volume": 1000,
+}])
+ashare.save_daily_bars(daily, path="ashare.db")
+ashare.save_trade_calendar(pd.DataFrame([{
+    "date": "2024-01-02", "is_open": True,
+}]), path="ashare.db")
+ashare.save_index_members(pd.DataFrame([{
+    "index_code": "000300.SH", "date": "2024-01-02", "ticker": "510300.SH",
+    "name": "沪深300ETF",
+}]), path="ashare.db")
+ashare.save_intraday_bars(pd.DataFrame([{
+    "ts": "2024-01-02 10:00:00", "ticker": "510300.SH", "close": 3.50,
+    "volume": 100,
+}]), freq="30", path="ashare.db")
 
-# 调仓日面板: 每个日期取当时已公布的最近一期
-rebal = pd.date_range("2016-01-31", "2026-08-31", freq="ME")
-equity = load_fundamentals_panel(rebal, fields="total_equity", path=DB)
+# S&P 500 数据可以独立写入，不要求由 liudb 抓取。
+sp500.save_constituents(pd.DataFrame([{"ticker": "AAPL", "name": "Apple Inc."}]))
+sp500.save_prices(pd.DataFrame([{
+    "date": "2024-01-02", "ticker": "AAPL", "close": 185.0,
+}]))
+sp500.save_risk_free_rate(pd.DataFrame([{
+    "date": "2024-01-02", "series": "DGS1MO", "value": 5.45,
+}]))
+sp500.save_roe(pd.DataFrame([{
+    "ticker": "AAPL", "period_end": "2023-09-30", "roe": 1.72,
+}]))
+sp500.save_fundamentals(pd.DataFrame([{
+    "ticker": "AAPL", "field": "net_income", "period_end": "2023-12-31",
+    "period_months": 12, "value": 100.0, "accn": "0000320193-24-000001",
+    "filed": "2024-02-01", "derived": False,
+}]))
 
-# 滚动四季度(TTM): 最近 4 个单季求和, 季度不连续或不齐时不返回
-ttm = load_fundamentals_ttm(rebal, fields=["net_income", "operating_cash_flow", "capex"], path=DB)
-
-latest = load_latest_filed(path=DB)   # 每只股票最近申报日, 决定哪些需要重抓
+ashare_prices = ashare.load_prices(tickers="510300.SH", path="ashare.db")
+us_prices = sp500.load_prices(tickers="AAPL", path="sp500.db")
 ```
 
-读取口径:
+各表的必需列和主键见对应 `save_*` 函数文档。写入按主键插入或覆盖，不会删除本批次未出现的
+旧记录；空 DataFrame 跳过写入，批次内重复主键会报错。每次表写入在事务中完成。
 
-- **as-of 规则**: 时点 t 看到的是 `filed <= t` 的版本中最新申报的那个; 同一天多个
-  版本时报告值优先于推导值。`filed` 是 EDGAR 官方申报日(美东 17:30 之后提交的
-  记到下一个工作日), 用 t 日收盘信号、t+1 成交的回测可以直接用。
-- `load_fundamentals_panel` 默认 `max_staleness_days=550`: 最近一期比日期旧太多
-  (停止申报/退市)就不返回; 传 `None` 不限。
-- `load_fundamentals_ttm` 只对金额类字段有意义(收入、利润、现金流等), 用
-  `period_months=3` 的单季值(含 sources 推导的 Q4 等)求和, 默认最近一个单季超过
-  200 天未更新就不返回。
-- `load_fundamentals` 返回不做取舍的原始版本行, 用于核对。
+## 与 sources 搭配
 
-### 5. A 股(沪深300 日线)
+`sources` 负责抓取并整理字段，`liudb` 负责清洗、存储和读取。两个包通过 DataFrame 配合，
+调用方决定抓取标的和日期范围。以下接口对应 `sources@v0.1.1`：
 
 ```python
-from sources.cn import (
-    get_cn_daily_bars, get_cn_index_members_history, get_cn_trade_calendar, session,
+import liudb.ashare as ashare
+import liudb.sp500 as sp500
+from sources.ashare import (
+    get_daily_bars,
+    get_index_members,
+    get_intraday_bars,
+    get_stock_basic,
+    get_trade_calendar,
 )
-from liudb import (
-    load_index_members, load_latest_dates, load_trade_calendar,
-    save_daily_status, save_index_members, save_prices, save_trade_calendar,
+from sources.roe import get_roe
+from sources.sp500.constituents import get_sp500_constituents
+from sources.sp500.prices import get_prices
+from sources.sp500.riskfree import get_risk_free_rate
+from sources.sp500.sec.fundamentals import get_fundamentals
+
+ashare.init_schema("ashare.db")
+sp500.init_schema("sp500.db")
+
+# A 股：按需抓取基础资料、交易日历、指数快照、日线和分钟线。
+ashare.save_stock_basic(get_stock_basic(["510300.SH", "600519.SH"]))
+ashare.save_trade_calendar(get_trade_calendar("2026-09-28", "2026-09-29"))
+ashare.save_index_members(get_index_members("hs300", date="2026-09-28"))
+ashare.save_daily_bars(get_daily_bars(["510300.SH", "600519.SH"], "2024-01-02"))
+ashare.save_intraday_bars(
+    get_intraday_bars("510300.SH", "2026-09-28", freq="30"), freq="30"
 )
 
-DB = "ashare.db"
-
-with session():
-    members = get_cn_index_members_history("hs300", "2015-01-01")   # 月度成分快照
-    save_index_members(members, DB)
-    save_trade_calendar(get_cn_trade_calendar("2015-01-01"), DB)
-
-    tickers = sorted(members["ticker"].unique())                     # 含曾经的成分股
-    bars = get_cn_daily_bars(tickers, start="2015-01-01")
-    save_prices(bars, DB)          # 行情列 -> prices
-    save_daily_status(bars, DB)    # 状态列 -> daily_status
-
-# 读取
-universe = load_index_members("000300.SH", "2020-06-30", path=DB)   # 截至该日的最近一份快照
-days = load_trade_calendar("2024-01-01", "2024-12-31", open_only=True, path=DB)
-latest = load_latest_dates("prices", path=DB)   # 每只股票已入库到哪天, 增量抓取从次日开始
+# S&P 500：每个来源单独抓取，再交给对应写入接口。
+sp500.save_constituents(get_sp500_constituents())
+sp500.save_prices(get_prices(["AAPL", "MSFT"], start="2025-01-02", end="2025-01-06"))
+sp500.save_risk_free_rate(get_risk_free_rate(start="2025-01-02", end="2025-01-06"))
+sp500.save_roe(get_roe("AAPL", years=1))
+sp500.save_fundamentals(get_fundamentals("AAPL", fields=["net_income", "total_equity"]))
 ```
 
----
+`sources` 网络请求的可用性、访问限制和覆盖历史由数据源决定；抓取失败时，`liudb` 不会自行
+重试或改变抓取区间。是否增量抓取由调用方决定，可通过 `load_latest_dates`、`load_latest_ts`
+或 `load_latest_filed` 查看库内最新记录。
 
-## 开发与测试
+## 查询
+
+市场级 `load_prices` 返回物理列，包括未复权 `close` 与 `adj_close`。逻辑列查询使用
+`Query`、`build_sql` 和 `loader`；逻辑列 `close` 对应复权收盘价 `adj_close`。市场入口为
+查询选择正确的默认数据库：
+
+```python
+from liudb.ashare import Query as AShareQuery, loader as load_ashare
+from liudb.sp500 import Query as SP500Query, loader as load_sp500
+
+ashare_close = load_ashare(request=AShareQuery(columns=["close"], tickers=["510300.SH"]))
+aapl_close = load_sp500(request=SP500Query(columns=["close"], tickers=["AAPL"]))
+```
+
+日期范围两端均包含。S&P 500 基本面接口提供原始行、点时快照、日期面板和 TTM 查询；点时读取
+按 `filed` 执行 as-of 过滤，不会使用当时尚未公布的版本。历史 `financials` 表结构仍为兼容旧库
+保留在 schema 中，当前没有对应的公开写入接口；新的基本面数据使用 `fundamentals` 表。
+
+## 旧版接口
+
+旧版 `liudb.save_*`、`liudb.load_*`、`liudb.init_schema` 和 `liudb.writer`、`liudb.schema`、
+`liudb.reader.ashare` 导入路径保留为兼容转发。新代码从 `liudb.ashare` 或 `liudb.sp500` 导入，
+避免市场默认库混淆。
+
+## 开发
 
 ```bash
+uv sync
 uv run ruff check .
 uv run pytest
 ```
-
-CI(`.github/workflows/ci.yml`)在 push / PR 到 main 时按 `uv.lock` 安装依赖,
-跑同样的 ruff 与 pytest。ruff 版本上界锁死, 规则集在 `pyproject.toml` 里显式写出,
-与 sources 保持一致。

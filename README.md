@@ -15,6 +15,30 @@ ashare.init_schema()  # ashare.db
 sp500.init_schema()   # sp500.db
 ```
 
+## 安装
+
+`liudb` 没有发布到 PyPI，直接从 GitHub 安装。依赖 `sources` 同样是 Git 源，版本写在
+`pyproject.toml` 的 `[tool.uv.sources]` 里（当前为 `v0.1.1`），因此推荐用 `uv`：
+
+```bash
+uv add "liudb @ git+https://github.com/20070316lbw-netizen/liudb.git"
+```
+
+需要固定版本时在 URL 后接 commit（本仓库暂无 tag）：
+
+```bash
+uv add "liudb @ git+https://github.com/20070316lbw-netizen/liudb.git#<commit>"
+```
+
+`pip` 不读 `[tool.uv.sources]`，会把 `sources` 解析成 PyPI 上的另一个同名包，
+所以 pip 用户必须同时显式指定 `sources` 的 Git 地址：
+
+```bash
+pip install \
+  "liudb @ git+https://github.com/20070316lbw-netizen/liudb.git" \
+  "sources @ git+https://github.com/20070316lbw-netizen/sources.git@v0.1.1"
+```
+
 ## 只使用 liudb
 
 调用方可以直接构造或从其他系统取得 DataFrame，再传给对应市场的写入函数。下例不导入

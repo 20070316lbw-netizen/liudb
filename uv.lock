@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -17,18 +17,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5f/56/a8120250d128bed162cd73c76d45f6ef9991f3e068f62a8ee060afa3104a/annotated_types-0.8.0.tar.gz", hash = "sha256:13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7", size = 15893, upload-time = "2026-07-23T20:16:13.995Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl", hash = "sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0", size = 13427, upload-time = "2026-07-23T20:16:12.938Z" },
-]
-
-[[package]]
-name = "baostock"
-version = "0.9.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pandas" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/66/61/8ad575eb83d4b22852a922e669bc13c9723675343e885b0040ab11a6a321/baostock-0.9.4.tar.gz", hash = "sha256:54dd26ec53100da02dcd47a21fc487ed5b2e12a4124af7961143d8ca0bc682e9", size = 28131, upload-time = "2026-09-21T09:52:05.831Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/df/6984deaa036cc3467f85411d01a48018eb86ed7477e74f33aa5b012ace05/baostock-0.9.4-py3-none-any.whl", hash = "sha256:0bf71c6069ab5890ff3596632f9c3f8f1fbc6bfcac582c2f9d6a5c11ab2cfaf8", size = 52424, upload-time = "2026-09-21T09:52:04.263Z" },
 ]
 
 [[package]]
@@ -410,7 +398,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=3.0.6" },
     { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "sources", git = "https://github.com/20070316lbw-netizen/sources.git?rev=v0.1.1" },
+    { name = "sources", git = "https://github.com/20070316lbw-netizen/sources.git?rev=v0.2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1011,10 +999,9 @@ wheels = [
 
 [[package]]
 name = "sources"
-version = "0.1.1"
-source = { git = "https://github.com/20070316lbw-netizen/sources.git?rev=v0.1.1#7ecc9a63cefeafde9c69f15ac39aa8daec36ddd6" }
+version = "0.2.0"
+source = { git = "https://github.com/20070316lbw-netizen/sources.git?rev=v0.2.0#8dfa3b291cb5af0398c2454896d9a2a044125e75" }
 dependencies = [
-    { name = "baostock" },
     { name = "exchange-calendars" },
     { name = "loguru" },
     { name = "numpy" },

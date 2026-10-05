@@ -5,7 +5,7 @@
 `liudb` 提供 DuckDB 表结构、DataFrame 清洗与存储、以及查询接口。抓取由调用方负责；
 `liudb` 的读写函数只接收 DataFrame，不会在内部发起网络请求或调用数据源。
 
-> 本分支已移除 A 股(ashare)相关的表结构、清洗、写入与读取接口，默认数据库只有 S&P 500 的
+> 本版本只覆盖 S&P 500：A 股(ashare)相关的表结构、清洗、写入与读取接口已移除，默认数据库为
 > `sp500.db`。
 
 项目默认数据库为 S&P 500 的 `sp500.db`：
@@ -19,7 +19,7 @@ sp500.init_schema()  # sp500.db
 ## 安装
 
 `liudb` 没有发布到 PyPI，直接从 GitHub 安装。依赖 `sources` 同样是 Git 源，版本写在
-`pyproject.toml` 的 `[tool.uv.sources]` 里（当前为 `v0.1.1`），因此推荐用 `uv`：
+`pyproject.toml` 的 `[tool.uv.sources]` 里（当前为 `v0.2.0`），因此推荐用 `uv`：
 
 ```bash
 uv add "liudb @ git+https://github.com/20070316lbw-netizen/liudb.git"
@@ -37,7 +37,7 @@ uv add "liudb @ git+https://github.com/20070316lbw-netizen/liudb.git#<commit>"
 ```bash
 pip install \
   "liudb @ git+https://github.com/20070316lbw-netizen/liudb.git" \
-  "sources @ git+https://github.com/20070316lbw-netizen/sources.git@v0.1.1"
+  "sources @ git+https://github.com/20070316lbw-netizen/sources.git@v0.2.0"
 ```
 
 ## 只使用 liudb
@@ -76,7 +76,7 @@ us_prices = sp500.load_prices(tickers="AAPL", path="sp500.db")
 ## 与 sources 搭配
 
 `sources` 负责抓取并整理字段，`liudb` 负责清洗、存储和读取。两个包通过 DataFrame 配合，
-调用方决定抓取标的和日期范围。以下接口对应 `sources@v0.1.1`：
+调用方决定抓取标的和日期范围。以下接口对应 `sources@v0.2.0`：
 
 ```python
 import liudb.sp500 as sp500

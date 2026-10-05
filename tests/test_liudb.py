@@ -6,7 +6,6 @@ import pytest
 
 from liudb import (
     get_duckdb,
-    init_ashare_schema,
     init_schema,
     init_sp500_schema,
     insert_constituents,
@@ -220,45 +219,19 @@ def test_missing_required_columns_raises():
 
 
 def test_init_schema_is_market_specific(tmp_path):
-    """两组 DDL 各自完整, 互不建对方的表。"""
+    """sp500 DDL 只建自己的表, 不建行情之外的市场表。"""
     sp500 = str(tmp_path / "sp500.db")
-    ashare = str(tmp_path / "ashare.db")
     init_sp500_schema(sp500)
-    init_ashare_schema(ashare)
 
-    def tables(path: str) -> set[str]:
-        with get_duckdb(path=path, read_only=True) as con:
-            return set(con.execute("SHOW TABLES").df()["name"])
+    with get_duckdb(path=sp500, read_only=True) as con:
+        sp = set(con.execute("SHOW TABLES").df()["name"])
 
-    sp, ash = tables(sp500), tables(ashare)
     assert {"constituents", "prices", "risk_free_rate", "roe", "financials",
             "fundamentals"} <= sp
     assert not ({"trade_calendar", "stock_basic", "daily_status", "index_members",
                  "intraday_bars"} & sp)
-    assert {"prices", "trade_calendar", "stock_basic", "daily_status", "index_members",
-            "intraday_bars"} <= ash
-    assert not ({"constituents", "risk_free_rate", "roe", "financials",
-                 "fundamentals"} & ash)
 
 
 def test_init_schema_rejects_unknown_market(tmp_path):
     with pytest.raises(ValueError, match="market"):
         init_schema(str(tmp_path / "x.db"), market="nasdaq")  # type: ignore[arg-type]
-
-
-def test_init_ashare_relaxes_legacy_intraday_close(tmp_path):
-    """旧库的 intraday_bars.close 是 NOT NULL, 建库时自动放开。"""
-    path = str(tmp_path / "legacy.db")
-    with get_duckdb(path=path) as con:
-        con.execute(
-            "CREATE TABLE intraday_bars ("
-            "  freq VARCHAR NOT NULL, ts TIMESTAMP NOT NULL, ticker VARCHAR NOT NULL,"
-            "  close DOUBLE NOT NULL, PRIMARY KEY (freq, ticker, ts))"
-        )
-    init_ashare_schema(path)
-    with get_duckdb(path=path, read_only=True) as con:
-        nullable = con.execute(
-            "SELECT is_nullable FROM information_schema.columns "
-            "WHERE table_name = 'intraday_bars' AND column_name = 'close'"
-        ).fetchone()[0]
-    assert nullable == "YES"

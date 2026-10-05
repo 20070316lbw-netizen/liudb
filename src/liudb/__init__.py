@@ -1,45 +1,30 @@
 """liudb 包入口，导出常用的数据库连接、初始化、写入与读取接口。"""
 from __future__ import annotations
 
-from liudb.connection import ASHARE_DB_PATH, DEFAULT_DB_PATH, get_duckdb
+from liudb.connection import DEFAULT_DB_PATH, get_duckdb
 from liudb.reader import (
     VALID,
     Query,
     ValidTableName,
     build_sql,
     load_constituents,
-    load_daily_status,
     load_fundamentals,
     load_fundamentals_panel,
     load_fundamentals_pit,
     load_fundamentals_ttm,
-    load_index_members,
-    load_index_members_history,
-    load_intraday_bars,
-    load_latest_dates,
     load_latest_filed,
-    load_latest_ts,
     load_prices,
     load_risk_free_rate,
     load_roe,
-    load_stock_basic,
-    load_trade_calendar,
     loader,
 )
-from liudb.schema import init_ashare_schema, init_schema, init_sp500_schema
+from liudb.schema import init_schema, init_sp500_schema
 from liudb.writer import (
-    save_ashare_daily_bars,
-    save_ashare_intraday_bars,
     save_constituents,
-    save_daily_status,
     save_fundamentals,
-    save_index_members,
-    save_intraday_bars,
     save_prices,
     save_risk_free_rate,
     save_roe,
-    save_stock_basic,
-    save_trade_calendar,
 )
 
 # 别名支持 (insert_* 与 read_*)
@@ -54,14 +39,12 @@ read_risk_free_rate = load_risk_free_rate
 read_roe = load_roe
 
 __all__ = [
-    "ASHARE_DB_PATH",
     "DEFAULT_DB_PATH",
     "VALID",
     "Query",
     "ValidTableName",
     "build_sql",
     "get_duckdb",
-    "init_ashare_schema",
     "init_schema",
     "init_sp500_schema",
     "insert_constituents",
@@ -69,37 +52,22 @@ __all__ = [
     "insert_risk_free_rate",
     "insert_roe",
     "load_constituents",
-    "load_daily_status",
     "load_fundamentals",
     "load_fundamentals_panel",
     "load_fundamentals_pit",
     "load_fundamentals_ttm",
-    "load_index_members",
-    "load_index_members_history",
-    "load_intraday_bars",
-    "load_latest_dates",
     "load_latest_filed",
-    "load_latest_ts",
     "load_prices",
     "load_risk_free_rate",
     "load_roe",
-    "load_stock_basic",
-    "load_trade_calendar",
     "loader",
     "read_constituents",
     "read_prices",
     "read_risk_free_rate",
     "read_roe",
-    "save_ashare_daily_bars",
-    "save_ashare_intraday_bars",
     "save_constituents",
-    "save_daily_status",
     "save_fundamentals",
-    "save_index_members",
-    "save_intraday_bars",
     "save_prices",
     "save_risk_free_rate",
     "save_roe",
-    "save_stock_basic",
-    "save_trade_calendar",
 ]
